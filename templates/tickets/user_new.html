@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <h1>New Ticket</h1>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-body">
+                    <form id="new-ticket-form" autocomplete="off">
+                        <div class="form-group">
+                            <label><b>Scope</b></label>
+                            <div class="scope-toggle btn-group d-flex">
+                                <button type="button" class="btn btn-outline-secondary active flex-fill" data-scope="user">
+                                    <i class="fas fa-user"></i> Personal
+                                </button>
+                                {% if Team.id %}
+                                <button type="button" class="btn btn-outline-info flex-fill" data-scope="team">
+                                    <i class="fas fa-users"></i> Team-wide
+                                </button>
+                                {% endif %}
+                            </div>
+                            <input type="hidden" id="scope-value" value="user">
+                            <small class="form-text text-muted">
+                                Team-wide tickets are visible to all team members.
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label><b>Title</b></label>
+                            <input type="text" id="ticket-title" class="form-control" placeholder="What do you need help with?" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label><b>Category</b></label>
+                            <select id="ticket-category" class="form-control custom-select">
+                                {% for cat in categories %}
+                                <option value="{{ cat }}">{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label><b>Message</b></label>
+                            <textarea id="ticket-content" class="form-control" rows="5" placeholder="Describe your issue..." required></textarea>
+                        </div>
+
+                        <div class="float-right">
+                            <a href="/tickets" class="btn btn-secondary mr-2">Cancel</a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-paper-plane"></i> Submit
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    var nonce = init.csrfNonce;
+    var scopeInput = document.getElementById("scope-value");
+
+    var scopeBtns = document.querySelectorAll(".scope-toggle .btn");
+    scopeBtns.forEach(function(btn){
+        btn.addEventListener("click", function(){
+            scopeBtns.forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            scopeInput.value = btn.dataset.scope;
+        });
+    });
+
+    document.getElementById("new-ticket-form").addEventListener("submit", function(e){
+        e.preventDefault();
+        var payload = {
+            title: document.getElementById("ticket-title").value,
+            content: document.getElementById("ticket-content").value,
+            category: document.getElementById("ticket-category").value,
+            scope: scopeInput.value
+        };
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/tickets");
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("CSRF-Token", nonce);
+        xhr.onload = function(){
+            var resp = JSON.parse(xhr.responseText);
+            if(resp.success){
+                window.location = "/tickets/" + resp.data.id;
+            } else {
+                alert(resp.errors ? resp.errors.join(", ") : "Failed to create ticket");
+            }
+        };
+        xhr.send(JSON.stringify(payload));
+    });
+});
+</script>
+{% endblock %}

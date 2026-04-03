@@ -1,0 +1,113 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <h1><i class="fas fa-cog"></i> Ticket Settings</h1>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+
+            <div class="card mb-4">
+                <div class="card-header"><strong>Ticket Limits</strong></div>
+                <div class="card-body">
+                    <p class="text-muted">Max open tickets allowed per user/team. Set to 0 for unlimited.</p>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label><b>Per User</b></label>
+                            <input type="number" id="limit-user" class="form-control" min="0" value="{{ limits.user }}">
+                            <small class="form-text text-muted">Personal tickets per player</small>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <label><b>Per Team</b></label>
+                            <input type="number" id="limit-team" class="form-control" min="0" value="{{ limits.team }}">
+                            <small class="form-text text-muted">Team-wide tickets per team</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header"><strong>Categories</strong></div>
+                <div class="card-body">
+                    <p class="text-muted">Players will see these categories when creating a ticket.</p>
+                    <div id="category-list">
+                        {% for cat in categories %}
+                        <div class="input-group mb-2 category-item">
+                            <input type="text" class="form-control cat-input" value="{{ cat }}">
+                            <div class="input-group-append">
+                                <button type="button" class="btn btn-outline-danger remove-cat">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" id="add-cat" class="btn btn-sm btn-outline-success mt-2">
+                        <i class="fas fa-plus"></i> Add Category
+                    </button>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between mb-4">
+                <a href="/admin/tickets" class="btn btn-secondary">Back</a>
+                <button type="button" id="save-all" class="btn btn-success">
+                    <i class="fas fa-save"></i> Save Settings
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    var nonce = init.csrfNonce;
+    var list = document.getElementById("category-list");
+
+    document.getElementById("add-cat").addEventListener("click", function(){
+        var html = '<div class="input-group mb-2 category-item">'
+            + '<input type="text" class="form-control cat-input" value="" placeholder="New category">'
+            + '<div class="input-group-append">'
+            + '<button type="button" class="btn btn-outline-danger remove-cat"><i class="fas fa-times"></i></button>'
+            + '</div></div>';
+        list.insertAdjacentHTML("beforeend", html);
+    });
+
+    list.addEventListener("click", function(e){
+        var btn = e.target.closest(".remove-cat");
+        if(btn) btn.closest(".category-item").remove();
+    });
+
+    document.getElementById("save-all").addEventListener("click", function(){
+        var inputs = list.querySelectorAll(".cat-input");
+        var cats = [];
+        inputs.forEach(function(inp){ if(inp.value.trim()) cats.push(inp.value.trim()); });
+
+        var payload = {
+            categories: cats,
+            limits: {
+                user: parseInt(document.getElementById("limit-user").value) || 0,
+                team: parseInt(document.getElementById("limit-team").value) || 0
+            }
+        };
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("PUT", "/api/tickets/settings");
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("CSRF-Token", nonce);
+        xhr.onload = function(){
+            var resp = JSON.parse(xhr.responseText);
+            if(resp.success) alert("Settings saved!");
+            else alert("Error saving settings");
+        };
+        xhr.send(JSON.stringify(payload));
+    });
+});
+</script>
+{% endblock %}

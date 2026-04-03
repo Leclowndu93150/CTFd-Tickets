@@ -1,0 +1,167 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <h1>
+            <i class="fas fa-ticket-alt"></i> Tickets
+        </h1>
+    </div>
+</div>
+<div class="container">
+    <div class="row mb-3">
+        <div class="col-md-5">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                </div>
+                <input type="text" id="ticket-search" class="form-control" placeholder="Search tickets, players, teams...">
+            </div>
+        </div>
+        <div class="col-md-7 text-right">
+            <div class="btn-group mr-2" role="group">
+                <button class="btn btn-sm btn-outline-secondary filter-btn active" data-filter="all">All</button>
+                <button class="btn btn-sm btn-outline-success filter-btn" data-filter="open">Open</button>
+                <button class="btn btn-sm btn-outline-warning filter-btn" data-filter="in_progress">In Progress</button>
+                <button class="btn btn-sm btn-outline-danger filter-btn" data-filter="closed">Closed</button>
+            </div>
+            <div class="btn-group mr-2" role="group">
+                <button class="btn btn-sm btn-outline-info scope-btn active" data-scope="all">All</button>
+                <button class="btn btn-sm btn-outline-info scope-btn" data-scope="user"><i class="fas fa-user"></i></button>
+                <button class="btn btn-sm btn-outline-info scope-btn" data-scope="team"><i class="fas fa-users"></i></button>
+            </div>
+            <a href="/admin/tickets/settings" class="btn btn-sm btn-outline-secondary mr-1">
+                <i class="fas fa-cog"></i>
+            </a>
+            <a href="/admin/tickets/new" class="btn btn-sm btn-success">
+                <i class="fas fa-plus"></i> New Ticket / DM
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <table class="table table-striped" id="tickets-table">
+                <thead>
+                    <tr>
+                        <th width="5%">#</th>
+                        <th width="25%">Title</th>
+                        <th width="10%">Scope</th>
+                        <th width="15%">From / Target</th>
+                        <th width="10%">Category</th>
+                        <th width="10%">Priority</th>
+                        <th width="10%">Status</th>
+                        <th width="15%">Updated</th>
+                    </tr>
+                </thead>
+                <tbody id="tickets-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    var nonce = init.csrfNonce;
+    var tbody = document.getElementById("tickets-body");
+    var searchInput = document.getElementById("ticket-search");
+
+    function escHtml(s){
+        var d = document.createElement("div");
+        d.textContent = s || "";
+        return d.innerHTML;
+    }
+
+    function statusBadge(s){
+        if(s === "open") return '<span class="badge badge-success">Open</span>';
+        if(s === "in_progress") return '<span class="badge badge-warning">In Progress</span>';
+        return '<span class="badge badge-danger">Closed</span>';
+    }
+
+    function priorityBadge(p){
+        if(p === "high") return '<span class="badge badge-danger">High</span>';
+        if(p === "normal") return '<span class="badge badge-secondary">Normal</span>';
+        return '<span class="badge badge-light">Low</span>';
+    }
+
+    function renderRow(t){
+        var scopeBadge = t.scope === "team"
+            ? '<span class="badge badge-info"><i class="fas fa-users"></i> Team</span>'
+            : '<span class="badge badge-secondary"><i class="fas fa-user"></i> User</span>';
+        var target = t.scope === "team" && t.team_name
+            ? '<i class="fas fa-users"></i> ' + escHtml(t.team_name)
+            : '<i class="fas fa-user"></i> ' + escHtml(t.author_name);
+        var search = (t.title + " " + t.author_name + " " + (t.team_name || "") + " " + t.category).toLowerCase();
+
+        return '<tr class="ticket-row" data-id="' + t.id + '" data-status="' + t.status + '" data-scope="' + t.scope + '" data-search="' + escHtml(search) + '">'
+            + '<td>' + t.id + '</td>'
+            + '<td><a href="/admin/tickets/' + t.id + '">' + escHtml(t.title) + '</a></td>'
+            + '<td>' + scopeBadge + '</td>'
+            + '<td>' + target + '</td>'
+            + '<td><span class="badge badge-light">' + escHtml(t.category) + '</span></td>'
+            + '<td>' + priorityBadge(t.priority) + '</td>'
+            + '<td>' + statusBadge(t.status) + '</td>'
+            + '<td><small>' + (t.updated_at ? new Date(t.updated_at).toLocaleString() : '') + '</small></td>'
+            + '</tr>';
+    }
+
+    function getActiveFilter(){ return document.querySelector(".filter-btn.active").dataset.filter; }
+    function getActiveScope(){ return document.querySelector(".scope-btn.active").dataset.scope; }
+
+    function applyFilters(){
+        var status = getActiveFilter();
+        var scope = getActiveScope();
+        var search = searchInput.value.toLowerCase().trim();
+        tbody.querySelectorAll(".ticket-row").forEach(function(row){
+            var show = true;
+            if(status !== "all" && row.dataset.status !== status) show = false;
+            if(scope !== "all" && row.dataset.scope !== scope) show = false;
+            if(search && row.dataset.search.indexOf(search) === -1) show = false;
+            row.style.display = show ? "" : "none";
+        });
+    }
+
+    document.querySelectorAll(".filter-btn").forEach(function(btn){
+        btn.addEventListener("click", function(){
+            document.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            applyFilters();
+        });
+    });
+    document.querySelectorAll(".scope-btn").forEach(function(btn){
+        btn.addEventListener("click", function(){
+            document.querySelectorAll(".scope-btn").forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            applyFilters();
+        });
+    });
+    searchInput.addEventListener("input", applyFilters);
+
+    function fetchAndRender(){
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/tickets");
+        xhr.setRequestHeader("CSRF-Token", nonce);
+        xhr.onload = function(){
+            if(xhr.status !== 200) return;
+            var resp = JSON.parse(xhr.responseText);
+            if(!resp.success) return;
+            var html = "";
+            if(resp.data.length === 0){
+                html = '<tr><td colspan="8" class="text-center text-muted py-4">No tickets yet.</td></tr>';
+            } else {
+                resp.data.forEach(function(t){ html += renderRow(t); });
+            }
+            tbody.innerHTML = html;
+            applyFilters();
+        };
+        xhr.send();
+    }
+
+    fetchAndRender();
+    setInterval(fetchAndRender, 5000);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1>
+                    <i class="fas fa-ticket-alt"></i>
+                    #{{ ticket.id }} &mdash; {{ ticket.title }}
+                </h1>
+                <div class="mt-2">
+                    {% if ticket.scope == "team" %}
+                        <span class="badge badge-info"><i class="fas fa-users"></i> Team: {{ ticket.team.name if ticket.team else "N/A" }}</span>
+                    {% else %}
+                        <span class="badge badge-secondary"><i class="fas fa-user"></i> User: {{ ticket.author.name if ticket.author else "Unknown" }}</span>
+                    {% endif %}
+                    <span class="badge badge-light">{{ ticket.category }}</span>
+                    {% if ticket.priority == "high" %}
+                        <span class="badge badge-danger">High Priority</span>
+                    {% elif ticket.priority == "normal" %}
+                        <span class="badge badge-secondary">Normal</span>
+                    {% else %}
+                        <span class="badge badge-light">Low</span>
+                    {% endif %}
+                    <span class="badge {{ 'badge-success' if ticket.status == 'open' else 'badge-warning' if ticket.status == 'in_progress' else 'badge-danger' }}" id="live-status">
+                        {{ 'Open' if ticket.status == 'open' else 'In Progress' if ticket.status == 'in_progress' else 'Closed' }}
+                    </span>
+                </div>
+            </div>
+            <div>
+                <a href="/admin/tickets" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left"></i> Back
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-9">
+            <div id="messages-container" class="mb-4" style="max-height:500px; overflow-y:auto;">
+                {% for msg in ticket.messages.all() %}
+                <div class="card mb-2 {{ 'border-primary' if msg.is_admin else 'border-light' }}" data-msg-id="{{ msg.id }}">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between">
+                            <strong>
+                                {% if msg.is_admin %}
+                                    <span class="text-primary"><i class="fas fa-shield-alt"></i> {{ msg.author.name if msg.author else "Admin" }}</span>
+                                {% else %}
+                                    <i class="fas fa-user"></i> {{ msg.author.name if msg.author else "Unknown" }}
+                                {% endif %}
+                            </strong>
+                            <small class="text-muted"><span data-time="{{ msg.created_at | isoformat }}"></span></small>
+                        </div>
+                        <p class="mb-0 mt-1">{{ msg.content }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if ticket.status != "closed" %}
+            <div class="card">
+                <div class="card-body">
+                    <form id="reply-form">
+                        <div class="form-group">
+                            <textarea id="reply-content" class="form-control" rows="3" placeholder="Type your reply..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i> Send Reply
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header"><strong>Actions</strong></div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label><b>Status</b></label>
+                        <select id="status-select" class="form-control form-control-sm">
+                            <option value="open" {{ "selected" if ticket.status == "open" }}>Open</option>
+                            <option value="in_progress" {{ "selected" if ticket.status == "in_progress" }}>In Progress</option>
+                            <option value="closed" {{ "selected" if ticket.status == "closed" }}>Closed</option>
+                        </select>
+                    </div>
+                    <button id="update-status" class="btn btn-sm btn-warning btn-block">Update Status</button>
+                    <hr>
+                    <button id="delete-ticket" class="btn btn-sm btn-danger btn-block">
+                        <i class="fas fa-trash"></i> Delete Ticket
+                    </button>
+                </div>
+            </div>
+
+            {% if ticket.scope == "team" and ticket.team %}
+            <div class="card mt-3">
+                <div class="card-header"><strong>Team Members</strong></div>
+                <div class="card-body p-2">
+                    <ul class="list-unstyled mb-0">
+                        {% for member in ticket.team.members %}
+                        <li class="py-1 px-2">
+                            <i class="fas fa-user fa-sm"></i>
+                            <a href="/admin/users/{{ member.id }}">{{ member.name }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    var ticketId = {{ ticket.id }};
+    var nonce = init.csrfNonce;
+    var container = document.getElementById("messages-container");
+    if(container) container.scrollTop = container.scrollHeight;
+
+    function ajax(method, url, data, cb){
+        var xhr = new XMLHttpRequest();
+        xhr.open(method, url);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("CSRF-Token", nonce);
+        xhr.onload = function(){ cb(JSON.parse(xhr.responseText), xhr.status); };
+        xhr.send(data ? JSON.stringify(data) : null);
+    }
+
+    function escHtml(s){
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function renderMsg(msg){
+        var cls = msg.is_admin ? "border-primary" : "border-light";
+        var icon = msg.is_admin
+            ? '<span class="text-primary"><i class="fas fa-shield-alt"></i> ' + escHtml(msg.author_name) + '</span>'
+            : '<i class="fas fa-user"></i> ' + escHtml(msg.author_name);
+        return '<div class="card mb-2 ' + cls + '" data-msg-id="' + msg.id + '"><div class="card-body py-2 px-3">'
+            + '<div class="d-flex justify-content-between"><strong>' + icon + '</strong>'
+            + '<small class="text-muted">just now</small></div>'
+            + '<p class="mb-0 mt-1">' + escHtml(msg.content) + '</p></div></div>';
+    }
+
+    function getKnownIds(){
+        var ids = {};
+        container.querySelectorAll("[data-msg-id]").forEach(function(el){ ids[el.dataset.msgId] = true; });
+        return ids;
+    }
+
+    function pollMessages(){
+        ajax("GET", "/api/tickets/" + ticketId, null, function(resp){
+            if(!resp.success) return;
+            var known = getKnownIds();
+            var added = false;
+            (resp.data.messages || []).forEach(function(msg){
+                if(!known[msg.id]){
+                    container.insertAdjacentHTML("beforeend", renderMsg(msg));
+                    added = true;
+                }
+            });
+            if(added) container.scrollTop = container.scrollHeight;
+
+            var s = resp.data.status;
+            var badge = document.getElementById("live-status");
+            if(badge){
+                badge.className = "badge " + (s === "open" ? "badge-success" : s === "in_progress" ? "badge-warning" : "badge-danger");
+                badge.textContent = s === "open" ? "Open" : s === "in_progress" ? "In Progress" : "Closed";
+            }
+        });
+    }
+
+    setInterval(pollMessages, 2000);
+
+    var form = document.getElementById("reply-form");
+    if(form){
+        form.addEventListener("submit", function(e){
+            e.preventDefault();
+            var ta = document.getElementById("reply-content");
+            var content = ta.value.trim();
+            if(!content) return;
+            ajax("POST", "/api/tickets/" + ticketId + "/messages", {content: content}, function(resp){
+                if(resp.success){
+                    container.insertAdjacentHTML("beforeend", renderMsg(resp.data));
+                    container.scrollTop = container.scrollHeight;
+                    ta.value = "";
+                }
+            });
+        });
+    }
+
+    document.getElementById("update-status").addEventListener("click", function(){
+        var status = document.getElementById("status-select").value;
+        ajax("PATCH", "/api/tickets/" + ticketId + "/status", {status: status}, function(resp){
+            if(resp.success) location.reload();
+        });
+    });
+
+    document.getElementById("delete-ticket").addEventListener("click", function(){
+        if(!confirm("Delete this ticket permanently?")) return;
+        ajax("DELETE", "/api/tickets/" + ticketId, null, function(resp){
+            if(resp.success) window.location = "/admin/tickets";
+        });
+    });
+});
+</script>
+{% endblock %}

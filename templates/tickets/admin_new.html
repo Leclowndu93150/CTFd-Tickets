@@ -1,0 +1,298 @@
+{% extends "admin/base.html" %}
+
+{% block stylesheets %}
+<style>
+.search-wrap { position: relative; }
+.search-results {
+    position: absolute; z-index: 1050; top: 100%; left: 0; right: 0;
+    max-height: 260px; overflow-y: auto;
+    background: #fff; border: 1px solid #ced4da; border-top: none;
+    border-radius: 0 0 .25rem .25rem; box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    display: none;
+}
+.search-results .sr-item {
+    padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+}
+.search-results .sr-item:hover, .search-results .sr-item.focused { background: #e9ecef; }
+.search-results .sr-item .sr-sub { font-size: .8rem; color: #6c757d; }
+.search-results .sr-empty { padding: 12px; text-align: center; color: #999; }
+.selected-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #e2e6ea; border-radius: .25rem; padding: 4px 10px; margin-top: 6px;
+}
+.selected-badge .remove-sel { cursor: pointer; font-weight: bold; color: #888; margin-left: 6px; }
+.selected-badge .remove-sel:hover { color: #dc3545; }
+.scope-toggle .btn { cursor: pointer; }
+.scope-toggle .btn.active { font-weight: bold; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <h1><i class="fas fa-ticket-alt"></i> New Ticket / DM</h1>
+    </div>
+</div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-body">
+                    <form id="new-ticket-form" autocomplete="off">
+                        <div class="form-group">
+                            <label><b>Scope</b></label>
+                            <div class="scope-toggle btn-group d-flex">
+                                <button type="button" class="btn btn-outline-secondary active flex-fill" data-scope="user">
+                                    <i class="fas fa-user"></i> DM a Player
+                                </button>
+                                <button type="button" class="btn btn-outline-info flex-fill" data-scope="team">
+                                    <i class="fas fa-users"></i> Convocate a Team
+                                </button>
+                            </div>
+                            <input type="hidden" id="scope-value" value="user">
+                        </div>
+
+                        <div class="form-group" id="user-select-group">
+                            <label><b>Target Player</b></label>
+                            <div class="search-wrap">
+                                <input type="text" id="user-search" class="form-control" placeholder="Search by name or email...">
+                                <div class="search-results" id="user-results"></div>
+                            </div>
+                            <div id="user-selected"></div>
+                            <input type="hidden" id="target-user-id" value="">
+                        </div>
+
+                        <div class="form-group" id="team-select-group" style="display:none;">
+                            <label><b>Target Team</b></label>
+                            <div class="search-wrap">
+                                <input type="text" id="team-search" class="form-control" placeholder="Search by team name...">
+                                <div class="search-results" id="team-results"></div>
+                            </div>
+                            <div id="team-selected"></div>
+                            <input type="hidden" id="target-team-id" value="">
+                        </div>
+
+                        <div class="form-group">
+                            <label><b>Title</b></label>
+                            <input type="text" id="ticket-title" class="form-control" placeholder="Ticket subject">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label><b>Category</b></label>
+                                <select id="ticket-category" class="form-control custom-select">
+                                    {% for cat in categories %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label><b>Priority</b></label>
+                                <select id="ticket-priority" class="form-control custom-select">
+                                    <option value="low">Low</option>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label><b>Message</b></label>
+                            <textarea id="ticket-content" class="form-control" rows="5" placeholder="Write your message to the player/team..."></textarea>
+                        </div>
+
+                        <div class="float-right">
+                            <a href="/admin/tickets" class="btn btn-secondary mr-2">Cancel</a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-paper-plane"></i> Send
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    var nonce = init.csrfNonce;
+
+    function ajax(method, url, data, cb){
+        var xhr = new XMLHttpRequest();
+        xhr.open(method, url);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("CSRF-Token", nonce);
+        xhr.onload = function(){ cb(JSON.parse(xhr.responseText), xhr.status); };
+        xhr.send(data ? JSON.stringify(data) : null);
+    }
+
+    function escHtml(s){
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // Scope toggle
+    var scopeBtns = document.querySelectorAll(".scope-toggle .btn");
+    var scopeInput = document.getElementById("scope-value");
+    scopeBtns.forEach(function(btn){
+        btn.addEventListener("click", function(){
+            scopeBtns.forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            var scope = btn.dataset.scope;
+            scopeInput.value = scope;
+            document.getElementById("user-select-group").style.display = scope === "user" ? "" : "none";
+            document.getElementById("team-select-group").style.display = scope === "team" ? "" : "none";
+        });
+    });
+
+    // Search autocomplete
+    function bindSearch(inputId, resultsId, selectedId, hiddenId, endpoint, renderItem, renderSelected){
+        var input = document.getElementById(inputId);
+        var results = document.getElementById(resultsId);
+        var timer;
+
+        input.addEventListener("input", function(){
+            var q = input.value.trim();
+            clearTimeout(timer);
+            if(q.length < 1){ results.style.display = "none"; results.innerHTML = ""; return; }
+            timer = setTimeout(function(){
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", endpoint + "?q=" + encodeURIComponent(q));
+                xhr.setRequestHeader("CSRF-Token", nonce);
+                xhr.onload = function(){
+                    var resp = JSON.parse(xhr.responseText);
+                    results.innerHTML = "";
+                    if(!resp.data || resp.data.length === 0){
+                        results.innerHTML = '<div class="sr-empty">No results</div>';
+                    } else {
+                        resp.data.forEach(function(item){
+                            results.insertAdjacentHTML("beforeend", renderItem(item));
+                        });
+                    }
+                    results.style.display = "block";
+                };
+                xhr.send();
+            }, 250);
+        });
+
+        input.addEventListener("focus", function(){
+            if(results.children.length > 0) results.style.display = "block";
+        });
+
+        document.addEventListener("click", function(e){
+            if(!e.target.closest("#" + inputId + ", #" + resultsId)) results.style.display = "none";
+        });
+
+        results.addEventListener("click", function(e){
+            var item = e.target.closest(".sr-item");
+            if(!item) return;
+            document.getElementById(hiddenId).value = item.dataset.id;
+            input.value = "";
+            input.disabled = true;
+            results.style.display = "none";
+            results.innerHTML = "";
+            document.getElementById(selectedId).innerHTML = renderSelected(item.dataset.id, item.dataset.display);
+        });
+
+        document.addEventListener("click", function(e){
+            if(e.target.closest("#" + selectedId + " .remove-sel")){
+                document.getElementById(hiddenId).value = "";
+                input.disabled = false;
+                input.value = "";
+                input.focus();
+                document.getElementById(selectedId).innerHTML = "";
+            }
+        });
+
+        input.addEventListener("keydown", function(e){
+            var items = results.querySelectorAll(".sr-item");
+            var active = results.querySelector(".sr-item.focused");
+            if(e.key === "ArrowDown"){
+                e.preventDefault();
+                if(active && active.nextElementSibling && active.nextElementSibling.classList.contains("sr-item")){
+                    active.classList.remove("focused");
+                    active.nextElementSibling.classList.add("focused");
+                } else {
+                    if(active) active.classList.remove("focused");
+                    if(items[0]) items[0].classList.add("focused");
+                }
+            } else if(e.key === "ArrowUp"){
+                e.preventDefault();
+                if(active && active.previousElementSibling && active.previousElementSibling.classList.contains("sr-item")){
+                    active.classList.remove("focused");
+                    active.previousElementSibling.classList.add("focused");
+                } else {
+                    if(active) active.classList.remove("focused");
+                    if(items[items.length-1]) items[items.length-1].classList.add("focused");
+                }
+            } else if(e.key === "Enter"){
+                e.preventDefault();
+                if(active) active.click();
+            }
+        });
+    }
+
+    bindSearch(
+        "user-search", "user-results", "user-selected", "target-user-id",
+        "/api/tickets/search/users",
+        function(u){
+            return '<div class="sr-item" data-id="' + u.id + '" data-display="' + escHtml(u.name) + '">'
+                + '<div><i class="fas fa-user fa-sm"></i> <strong>' + escHtml(u.name) + '</strong></div>'
+                + '<div class="sr-sub">' + escHtml(u.email) + ' &middot; ID ' + u.id + '</div></div>';
+        },
+        function(id, name){
+            return '<div class="selected-badge"><i class="fas fa-user"></i> ' + escHtml(name) + '<span class="remove-sel">&times;</span></div>';
+        }
+    );
+
+    bindSearch(
+        "team-search", "team-results", "team-selected", "target-team-id",
+        "/api/tickets/search/teams",
+        function(t){
+            return '<div class="sr-item" data-id="' + t.id + '" data-display="' + escHtml(t.name) + '">'
+                + '<div><i class="fas fa-users fa-sm"></i> <strong>' + escHtml(t.name) + '</strong></div>'
+                + '<div class="sr-sub">' + t.member_count + ' member' + (t.member_count !== 1 ? 's' : '') + ' &middot; ID ' + t.id + '</div></div>';
+        },
+        function(id, name){
+            return '<div class="selected-badge"><i class="fas fa-users"></i> ' + escHtml(name) + '<span class="remove-sel">&times;</span></div>';
+        }
+    );
+
+    // Submit
+    document.getElementById("new-ticket-form").addEventListener("submit", function(e){
+        e.preventDefault();
+        var scope = scopeInput.value;
+        var payload = {
+            title: document.getElementById("ticket-title").value,
+            content: document.getElementById("ticket-content").value,
+            category: document.getElementById("ticket-category").value,
+            priority: document.getElementById("ticket-priority").value,
+            scope: scope
+        };
+        if(scope === "user"){
+            var uid = parseInt(document.getElementById("target-user-id").value);
+            if(!uid){ alert("Select a player first"); return; }
+            payload.target_user_id = uid;
+        }
+        if(scope === "team"){
+            var tid = parseInt(document.getElementById("target-team-id").value);
+            if(!tid){ alert("Select a team first"); return; }
+            payload.target_team_id = tid;
+        }
+
+        ajax("POST", "/api/tickets/admin-create", payload, function(resp, status){
+            if(resp.success){
+                window.location = "/admin/tickets/" + resp.data.id;
+            } else {
+                alert(resp.errors ? resp.errors.join(", ") : "Failed to create ticket");
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
