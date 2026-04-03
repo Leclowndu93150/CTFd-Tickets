@@ -163,7 +163,7 @@ def api_mark_notifications_read():
 @tickets_bp.route("/api/tickets/search/users", methods=["GET"])
 @admins_only
 def api_search_users():
-    q = request.args.get("q", "").strip()
+    q = request.args.get("q", "").strip().replace("%", "").replace("_", "")
     if len(q) < 1:
         return jsonify({"success": True, "data": []})
     results = Users.query.filter(
@@ -179,7 +179,7 @@ def api_search_users():
 @tickets_bp.route("/api/tickets/search/teams", methods=["GET"])
 @admins_only
 def api_search_teams():
-    q = request.args.get("q", "").strip()
+    q = request.args.get("q", "").strip().replace("%", "").replace("_", "")
     if len(q) < 1:
         return jsonify({"success": True, "data": []})
     results = Teams.query.filter(
@@ -328,13 +328,18 @@ def api_create_ticket():
     data = request.get_json()
     user = get_current_user()
 
-    title = data.get("title", "").strip()
-    content = data.get("content", "").strip()
-    category = data.get("category", "General")
+    title = data.get("title", "").strip()[:256]
+    content = data.get("content", "").strip()[:5000]
+    category = data.get("category", "General")[:64]
     scope = data.get("scope", "user")
     priority = data.get("priority", "normal")
     target_user_id = data.get("target_user_id")
     target_team_id = data.get("target_team_id")
+
+    if scope not in ("user", "team"):
+        scope = "user"
+    if priority not in ("low", "normal", "high"):
+        priority = "normal"
 
     if not title or not content:
         return jsonify({"success": False, "errors": ["Title and message are required"]}), 400
@@ -394,13 +399,18 @@ def api_admin_create_ticket():
     data = request.get_json()
     user = get_current_user()
 
-    title = data.get("title", "").strip()
-    content = data.get("content", "").strip()
-    category = data.get("category", "General")
+    title = data.get("title", "").strip()[:256]
+    content = data.get("content", "").strip()[:5000]
+    category = data.get("category", "General")[:64]
     priority = data.get("priority", "normal")
     scope = data.get("scope", "user")
     target_user_id = data.get("target_user_id")
     target_team_id = data.get("target_team_id")
+
+    if scope not in ("user", "team"):
+        scope = "user"
+    if priority not in ("low", "normal", "high"):
+        priority = "normal"
 
     if not title or not content:
         return jsonify({"success": False, "errors": ["Title and message are required"]}), 400
@@ -461,7 +471,7 @@ def api_add_message(ticket_id):
             abort(403)
 
     data = request.get_json()
-    content = data.get("content", "").strip()
+    content = data.get("content", "").strip()[:5000]
     if not content:
         return jsonify({"success": False, "errors": ["Message content is required"]}), 400
 
